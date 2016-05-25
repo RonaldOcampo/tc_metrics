@@ -18,13 +18,17 @@ class CIStageMetrics
 
   def gather_metrics
     @build_config_list.each do |build_id|
-      json_response = JSON.parse(RestClient::Request.execute(method: :get, url: "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{build_id}/builds", user: 'ronaldo', password: 'PASSWORD', headers: {accept: 'application/json'}).body)
-      total_count = json_response['count']
-
-      json_response = JSON.parse(RestClient::Request.execute(method: :get, url: "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{build_id}/builds?locator=status:SUCCESS", user: 'ronaldo', password: 'PASSWORD', headers: {accept: 'application/json'}).body)
+      json_response = JSON.parse(RestClient::Request.execute(method: :get, url: "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{build_id}/builds?locator=count:1000,status:SUCCESS", user: 'ronaldo', password: 'PASSWORD', headers: {accept: 'application/json'}).body)
       pass_count = json_response['count']
+
+      json_response = JSON.parse(RestClient::Request.execute(method: :get, url: "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{build_id}/builds?locator=count:1000,status:FAILURE", user: 'ronaldo', password: 'PASSWORD', headers: {accept: 'application/json'}).body)
+      fail_count = json_response['count']
+
+      json_response = JSON.parse(RestClient::Request.execute(method: :get, url: "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{build_id}/builds?locator=count:1000,status:ERROR", user: 'ronaldo', password: 'PASSWORD', headers: {accept: 'application/json'}).body)
+      error_count = json_response['count']
+
       @pass_count += pass_count
-      @fail_count += total_count - pass_count
+      @fail_count += fail_count + error_count
     end
   end
 
