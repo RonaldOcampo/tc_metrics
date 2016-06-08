@@ -18,32 +18,33 @@ STAGE_NAMES = {
 }
 
 class CIBuildMetrics
-  attr_reader :build_id, :pass_count, :fail_count
+  attr_reader :build_id, :pass_count, :fail_count, :total_count
 
   def initialize(build_id)
     @build_id = build_id
     @pass_count = 0
     @fail_count = 0
+    @total_count = 0
   end
 
   def to_s
-    "Build Id: #{@build_id}; Pass Count: #{@pass_count}; Fail Count: #{@fail_count}"
+    "Build Id: #{@build_id}; Pass Count: #{@pass_count}; Fail Count: #{@fail_count}; Total Count: #{@total_count}"
   end
 
   def gather_metrics
     begin
-      # url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:SUCCESS,branch:default:any"
-      url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:SUCCESS"
+      url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:SUCCESS,branch:default:any"
+      # url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:SUCCESS"
       json_response = JSON.parse(RestClient::Request.execute(method: :get, url: url, user: 'ronaldo', password: 'PASSWORD', headers: {accept: 'application/json'}).body)
       pass_count = json_response['count']
 
-      # url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:FAILURE,branch:default:any"
-      url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:FAILURE"
+      url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:FAILURE,branch:default:any"
+      # url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:FAILURE"
       json_response = JSON.parse(RestClient::Request.execute(method: :get, url: url, user: 'ronaldo', password: 'PASSWORD', headers: {accept: 'application/json'}).body)
       fail_count = json_response['count']
 
-      # url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:ERROR,branch:default:any"
-      url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:ERROR"
+      url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:ERROR,branch:default:any"
+      # url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:ERROR"
       json_response = JSON.parse(RestClient::Request.execute(method: :get, url: url, user: 'ronaldo', password: 'PASSWORD', headers: {accept: 'application/json'}).body)
       error_count = json_response['count']
     rescue => e
@@ -55,19 +56,20 @@ class CIBuildMetrics
 
     @pass_count = pass_count
     @fail_count = fail_count + error_count
+    @total_count = @pass_count + @fail_count
   end
 
   def pass_percentage
-    (@pass_count.to_f / (@pass_count.to_f + @fail_count.to_f) * 100).round(2)
+    (@pass_count.to_f / @total_count.to_f * 100).round(2)
   end
 
   def fail_percentage
-    (@fail_count.to_f / (@pass_count.to_f + @fail_count.to_f) * 100).round(2)
+    (@fail_count.to_f / @total_count.to_f * 100).round(2)
   end
 end
 
 class CIStageMetrics
-  attr_reader :stage_name, :build_metrics_list, :pass_count, :fail_count
+  attr_reader :stage_name, :build_metrics_list, :pass_count, :fail_count, :total_count
 
   def initialize(stage_name, build_config_list = [])
     @stage_name = stage_name
@@ -77,10 +79,11 @@ class CIStageMetrics
     end
     @pass_count = 0
     @fail_count = 0
+    @total_count = 0
   end
 
   def to_s
-    "Stage Name: #{@stage_name}; Pass Count: #{@pass_count}; Fail Count: #{@fail_count}; Build Metrics List: #{@build_metrics_list}"
+    "Stage Name: #{@stage_name}; Pass Count: #{@pass_count}; Fail Count: #{@fail_count}; Total Count: #{@total_count}; Build Metrics List: #{@build_metrics_list}"
   end
 
   def gather_metrics
@@ -89,14 +92,15 @@ class CIStageMetrics
       @pass_count += build_metrics.pass_count
       @fail_count += build_metrics.fail_count
     end
+    @total_count = @pass_count + @fail_count
   end
 
   def pass_percentage
-    (@pass_count.to_f / (@pass_count.to_f + @fail_count.to_f) * 100).round(2)
+    (@pass_count.to_f / @total_count.to_f * 100).round(2)
   end
 
   def fail_percentage
-    (@fail_count.to_f / (@pass_count.to_f + @fail_count.to_f) * 100).round(2)
+    (@fail_count.to_f / @total_count.to_f * 100).round(2)
   end
 end
 
@@ -114,6 +118,8 @@ class CIStageMetricsAnalysis
       production_phx: 90,
       production_tor: 90
   }
+
+  @@first_team = true
 
   def initialize(team_name, stage_metrics_hash = {})
     @team_name = team_name
@@ -159,11 +165,29 @@ class CIStageMetricsAnalysis
     end
   end
 
+  def staging_vs_production_rule
+    {staging_mia: :production_mia, staging_atl: :production_atl, staging_phx: :production_phx, staging_tor: :production_tor}.each do |staging_key, production_key|
+      if @stage_metrics_hash[staging_key] && @stage_metrics_hash[production_key]
+        if @stage_metrics_hash[staging_key].total_count >= @stage_metrics_hash[production_key].total_count
+          @well_string << "  - #{STAGE_NAMES[staging_key]} aggregate build counts greater or equal than #{STAGE_NAMES[production_key]} build counts [#{@stage_metrics_hash[staging_key].total_count} - #{@stage_metrics_hash[production_key].total_count}]\n"
+        else
+          @needs_improvement_string << "  - #{STAGE_NAMES[staging_key]} aggregate build counts should be greater or equal than #{STAGE_NAMES[production_key]} build counts [#{@stage_metrics_hash[staging_key].total_count} - #{@stage_metrics_hash[production_key].total_count}]\n"
+        end
+      end
+    end
+  end
+
   def generate_metrics_analysis_file
     all_stages_defined_rule
     stage_rules
+    staging_vs_production_rule
 
     File.open('analysis_metrics_rule.txt', 'a+') do |f|
+      if @@first_team
+        f.puts('NOTE: TC keeps build data for the last 35 days. Keeps artifacts for 5 days from last build and last 5 successful builds')
+        f.puts
+        @@first_team = false
+      end
       f.puts("Team Name: #{@team_name}")
       f.puts('Well')
       f.puts(@well_string) unless @well_string == ''
@@ -262,32 +286,32 @@ onb_stages = {
 }
 gather_metrics_for_team 'ONB', onb_stages
 
-# pcal_stages = {
-#     commit: ['bt102'],
-#     acceptance: ['bt238', 'NPCALAcceptanceTests_1RunUiTestsExpressionBuilderCalcRuleAndUsability', 'NPCALAcceptanceTests_1RunUiTestsExpressionBuilderEditor', 'NPCALAcceptanceTests_1RunUiTestsExpressionBuilderFunctionsAndVariables', 'bt601', 'bt599', 'bt126', 'NPCALAcceptanceTests_1RunUnitTests'],
-#     devqa: ['NPCALDevPlayground_1Create', 'NPCALDemoEnvironments_2CreateUCloudFromMaster', 'NPCALDemoEnvironments_3CreateUCloudMultiNodeAskFirstUseTheOtherCreate', 'PerfMulti000'],
-#     staging_atl: ['NPCALStagingEnvironments_2Create'],
-#     staging_phx: ['NPCALPhoenixStagingEnvironments_2Create'],
-#     staging_tor: ['NPCAL_NPCALTorontoStagingEnvironments_2Create'],
-#     production_atl: ['NPCAL_NPCALAtlantaProductionEnvironments_2Create'],
-#     production_phx: ['NPCAL_NPCALPhoenixProductionEnvironments_2Create'],
-#     production_tor: ['NPCAL_NPCALTorontoProductionEnvironments_2Create'],
-# }
-# gather_metrics_for_team 'PCAL', pcal_stages
-#
-# rec_stages = {
-#     commit: ['bt333', 'NRECCommitStage_2EQuestUnitTests', 'NRECCommitStage_11UnitTests'],
-#     acceptance: ['NREC_ATC_1TestDeployment', 'NREC_ATC_15IntegrationTests', 'NREC_ATC_22EQuestIntegrationTests', 'NREC_ATC_20Candidate', 'NREC_ATC_201CandidateFindsOpportunity', 'NREC_ATC_2011CandidateFindsOpportunity', 'NREC_ATC_202CandidateReferenceRecommends', 'NREC_ATC_203CandidateViewsAndManagesPresence', 'NREC_ATC_2031CandidateViewsAndManagesPresence', 'NREC_ATC_2032CandidateViewsAndManagesPresence', 'NREC_ATC_204CandidateVisualizesAndManagesReferences', 'NREC_ATC_2041CandidateVisualizesAndManagesReferences', 'NREC_ATC_205Opportunity', 'NREC_ATC_214', 'NREC_ATC_30ClusterSetttingsIsolated', 'NREC_ATC_41IdentityIntegrationTests'],
-#     devqa: ['bt181', 'NrecDemoEnvironments_1CreateAllInTwo', 'bt272', 'bt548', 'NrecDemoEnvironments_SimulateProductionUpgrade'],
-#     staging_atl: ['bt178', 'NrecAtlantaStagingEnvironments_SimulateProductionUpgrade'],
-#     staging_phx: ['bt459', 'NrecPhoenixStagingEnvironments_SimulateProductionUpgrade'],
-#     staging_tor: ['bt506', 'NrecTorontoStagingEnvironments_SimulateProductionUpgrade'],
-#     production_atl: ['NrecAtlantaProductionEnvironments_CreateForUpgrade', 'NrecAtlantaProductionEnvironments_2UpgradeToExisting', 'bt188', 'NrecAtlantaProductionEnvironments_SimulateProductionUpgrade'],
-#     production_phx: ['NrecPhoenixProductionEnvironments_CreateForUpgrade', 'NrecPhoenixProductionEnvironments_2UpgradeToExisting', 'bt468', 'NrecPhoenixProductionEnvironments_SimulateProductionUpgrade'],
-#     production_tor: ['NRECTorontoProductionEnvironments_1CreateForUpgrade', 'NRECTorontoProductionEnvironments_2UpgradeToExisting', 'bt512', 'NRECTorontoProductionEnvironments_SimulateProductionUpgrade'],
-# }
-# gather_metrics_for_team 'REC', rec_stages
-#
+pcal_stages = {
+    commit: ['bt102'],
+    acceptance: ['bt238', 'NPCALAcceptanceTests_1RunUiTestsExpressionBuilderCalcRuleAndUsability', 'NPCALAcceptanceTests_1RunUiTestsExpressionBuilderEditor', 'NPCALAcceptanceTests_1RunUiTestsExpressionBuilderFunctionsAndVariables', 'bt601', 'bt599', 'bt126', 'NPCALAcceptanceTests_1RunUnitTests'],
+    devqa: ['NPCALDevPlayground_1Create', 'NPCALDemoEnvironments_2CreateUCloudFromMaster', 'NPCALDemoEnvironments_3CreateUCloudMultiNodeAskFirstUseTheOtherCreate', 'PerfMulti000'],
+    staging_atl: ['NPCALStagingEnvironments_2Create'],
+    staging_phx: ['NPCALPhoenixStagingEnvironments_2Create'],
+    staging_tor: ['NPCAL_NPCALTorontoStagingEnvironments_2Create'],
+    production_atl: ['NPCAL_NPCALAtlantaProductionEnvironments_2Create'],
+    production_phx: ['NPCAL_NPCALPhoenixProductionEnvironments_2Create'],
+    production_tor: ['NPCAL_NPCALTorontoProductionEnvironments_2Create'],
+}
+gather_metrics_for_team 'PCAL', pcal_stages
+
+rec_stages = {
+    commit: ['bt333', 'NRECCommitStage_2EQuestUnitTests', 'NRECCommitStage_11UnitTests'],
+    acceptance: ['NREC_ATC_1TestDeployment', 'NREC_ATC_15IntegrationTests', 'NREC_ATC_22EQuestIntegrationTests', 'NREC_ATC_20Candidate', 'NREC_ATC_201CandidateFindsOpportunity', 'NREC_ATC_2011CandidateFindsOpportunity', 'NREC_ATC_202CandidateReferenceRecommends', 'NREC_ATC_203CandidateViewsAndManagesPresence', 'NREC_ATC_2031CandidateViewsAndManagesPresence', 'NREC_ATC_2032CandidateViewsAndManagesPresence', 'NREC_ATC_204CandidateVisualizesAndManagesReferences', 'NREC_ATC_2041CandidateVisualizesAndManagesReferences', 'NREC_ATC_205Opportunity', 'NREC_ATC_214', 'NREC_ATC_30ClusterSetttingsIsolated', 'NREC_ATC_41IdentityIntegrationTests'],
+    devqa: ['bt181', 'NrecDemoEnvironments_1CreateAllInTwo', 'bt272', 'bt548', 'NrecDemoEnvironments_SimulateProductionUpgrade'],
+    staging_atl: ['bt178', 'NrecAtlantaStagingEnvironments_SimulateProductionUpgrade'],
+    staging_phx: ['bt459', 'NrecPhoenixStagingEnvironments_SimulateProductionUpgrade'],
+    staging_tor: ['bt506', 'NrecTorontoStagingEnvironments_SimulateProductionUpgrade'],
+    production_atl: ['NrecAtlantaProductionEnvironments_CreateForUpgrade', 'NrecAtlantaProductionEnvironments_2UpgradeToExisting', 'bt188', 'NrecAtlantaProductionEnvironments_SimulateProductionUpgrade'],
+    production_phx: ['NrecPhoenixProductionEnvironments_CreateForUpgrade', 'NrecPhoenixProductionEnvironments_2UpgradeToExisting', 'bt468', 'NrecPhoenixProductionEnvironments_SimulateProductionUpgrade'],
+    production_tor: ['NRECTorontoProductionEnvironments_1CreateForUpgrade', 'NRECTorontoProductionEnvironments_2UpgradeToExisting', 'bt512', 'NRECTorontoProductionEnvironments_SimulateProductionUpgrade'],
+}
+gather_metrics_for_team 'REC', rec_stages
+
 rst_identityV1_stages = {
     commit: ['NTESCommitStage_1bBuildAndUnitTest'],
     acceptance: ['Tes_2IdentityAcceptanceTests_2SmokeTests', 'Tes_2IdentityAcceptanceTests_2uccNewContractTests', 'Tes_2IdentityAcceptanceTests_2FunctionalUiTests', 'Tes_2IdentityAcceptanceTests_2IntegrationTests', 'Tes_2IdentityAcceptanceTests_3NightlyPerformanceTests'],
@@ -298,60 +322,51 @@ rst_identityV1_stages = {
     production_tor: ['Tes_5Production_5identityUccTorontoProductionEnvironments_Create', 'Tes_5Production_5identityUccTorontoProductionEnvironments_UpgradeAppServers'],
 }
 gather_metrics_for_team 'RST Identity V1', rst_identityV1_stages
-#
-# rst_ucc_stages = {
-#     commit: ['NADMCommitStage_1BuildAndUnitTest'],
-#     acceptance: ['Ssd_UccBetaAcceptanceTests_2SmokeTests', 'Ssd_UccBetaAcceptanceTests_22SetupProtractorUiTests', 'Ssd_UccBetaAcceptanceTests_222RunFunctionalPerformanceTests', 'Ssd_UccBetaAcceptanceTests_2ContractTests', 'Ssd_UccBetaAcceptanceTests_25onbContractTests'],
-#     devqa: ['RST_Ucc_3uccTestEnvironments_AdmDemoCreate', 'Sdd_AdmDemo_AdmDemoCreate', 'Sdd_AdmDemo_UccDemoUpgrade', 'Sdd_AdmDemo_33UpdateApplicationConfiguration'],
-#     staging_atl: ['Ssd_UccStaging_AdmDemoCreate', 'Ssd_UccStaging_UccStaginUpgrade'],
-#     staging_tor: ['RST_Ucc_4Staging_4uccTorontoStagingEnvironments_AdmDemoCreate', 'RST_Ucc_4Staging_4uccTorontoStagingEnvironments_UccStaginUpgrade'],
-#     production_atl: ['Ssd_5uccProduction_AdmDemoCreate', 'Ssd_5uccProduction_53ProductionUpgrade', 'Ssd_5uccProduction_43UpdateApplicationConfiguration'],
-#     production_tor: ['RST_Ucc_5Production_5uccTorontoProductionEnvironments_AdmDemoCreate', 'RST_Ucc_5Production_5uccTorontoProductionEnvironments_53ProductionUpgrade'],
-# }
-# gather_metrics_for_team 'RST UCC', rst_ucc_stages
-#
-# rst_dms_stages = {
-#     commit: ['DMS_Product_CommitStage_11BuildAndUnitTest'],
-#     acceptance: ['DMS_Services_2AcceptanceTests_21ContractTests', 'DMS_Services_2dmsAcceptanceTests_28RunReconciliation'],
-#     devqa: ['DMS_Services_3DemoEnvironments_31Cre', 'DMS_Services_4MiamiTestingEnvironments_41Create', 'DMS_Services_4MiamiTestingEnvironments_43Upgrade'],
-#     staging_atl: ['DMS_Services_5AtlantaStagingEnvironments_51Create', 'DMS_Services_5AtlantaStagingEnvironments_53Upgrade'],
-#     staging_phx: ['DMS_Services_5PhoenixStagingEnvironments_51Create', 'DMS_Services_5PhoenixStagingEnvironments_53Upgrade'],
-#     staging_tor: ['DMS_Services_Staging_5TorontoStagingEnvironments_51Create', 'DMS_Services_Staging_5TorontoStagingEnvironments_53Upgrade'],
-#     production_atl: ['DMS_Services_6AtlantaProductionEnvironments_61Create', 'DMS_Services_6AtlantaProductionEnvironments_63Upgrade'],
-#     production_phx: ['DMS_Services_7PhoenixProductionEnvironments_31Cre', 'DMS_Services_7PhoenixProductionEnvironments_33Upgrade'],
-#     production_tor: ['DMS_Services_6Production_6TorontoProductionEnvironments_61Create', 'DMS_Services_6Production_6TorontoProductionEnvironments_63Upgrade'],
-# }
-# gather_metrics_for_team 'RST DMS', rst_dms_stages
-#
-# aca_stages = {
-#     commit: ['ACAFiling_CommitStage_BuildAndUnitTest'],
-#     acceptance: ['ACAFiling_AcceptanceStage_NunitAcceptanceTest', 'ACAFiling_AcceptanceStage_NunitIntegrationTest'],
-#     devqa: ['ACAFiling_DevSandbox_CreateEnvironment', 'ACAFiling_PsrSandbox_CreateEnvironment', 'ACAFiling_3ReleaseCandidateUat_CreateOrUpgradeEnvironment'],
-#     staging_atl: ['ACAFiling_Staging_CreateOrUpgradeEnvironment'],
-#     production_atl: ['ACAFiling_Prodution_CreateOrUpgradeEnvironment'],
-# }
-# gather_metrics_for_team 'ACA', aca_stages
-#
-# platform_services_identity_stages = {
-#     commit: ['PlatformServices_Identity_CommitTest_BuildAndUnitTest'],
-#     acceptance: ['PlatformServices_Identity_CommitTest_AcceptanceTestFeatures', 'PlatformServices_Identity_CommitTest_AcceptanceTestMaster'],
-#     devqa: ['PlatformServices_Identity_ReleaseCandidateUAT_MiaSandbox', 'PlatformServices_Identity_ReleaseCandidateUAT_MiaDeploySandboxHAProxy', 'PlatformServices_Identity_MIAPlayground_Create', 'PlatformServices_Identity_MIAPlayground_Upgrade'],
-#     production_atl: ['PlatformServices_Atlanta_AtlDeployProduction'],
-#     production_tor: ['PlatformServices_Identity_ReleaseProduction_TorDeployProduction'],
-# }
-# gather_metrics_for_team 'Platform Services Identity', platform_services_identity_stages
-#
-# hoth_dns_api_stages = {
-#     commit: ['ucp_HothDnsApi_CommitStage_BuildAndUnitTest'],
-#     acceptance: ['ucp_HothDnsApi_AcceptanceStage_FunctionalTest', 'ucp_HothDnsApi_AcceptanceStage_AcceptanceTest', 'ucp_HothDnsApi_AcceptanceStage_PerformanceTest', 'ucp_HothDnsApi_AcceptanceStage_SmokeTest'],
-#     devqa: ['ucp_HothDnsApi_DevQa_Create'],
-#     staging_mia: ['ucp_HothDnsApi_41StagingMi_Create'],
-#     staging_atl: ['ucp_HothDnsApi_42StagingAtl_Create'],
-#     staging_phx: ['ucp_HothDnsApi_43StagingPhx_Create'],
-#     staging_tor: ['ucp_HothDnsApi_44StagingTo_Create'],
-#     production_mia: ['ucp_HothDnsApi_51ProdMia_Create'],
-#     production_atl: ['ucp_HothDnsApi_52ProductionAtl_Create'],
-#     production_phx: ['ucp_HothDnsApi_53ProductionPhx_Create'],
-#     production_tor: ['ucp_HothDnsApi_54ProductioTor_ACreate'],
-# }
-# gather_metrics_for_team 'Hoth DNS API', hoth_dns_api_stages
+
+rst_ucc_stages = {
+    commit: ['NADMCommitStage_1BuildAndUnitTest'],
+    acceptance: ['Ssd_UccBetaAcceptanceTests_2SmokeTests', 'Ssd_UccBetaAcceptanceTests_22SetupProtractorUiTests', 'Ssd_UccBetaAcceptanceTests_222RunFunctionalPerformanceTests', 'Ssd_UccBetaAcceptanceTests_2ContractTests', 'Ssd_UccBetaAcceptanceTests_25onbContractTests'],
+    devqa: ['RST_Ucc_3uccTestEnvironments_AdmDemoCreate', 'Sdd_AdmDemo_AdmDemoCreate', 'Sdd_AdmDemo_UccDemoUpgrade', 'Sdd_AdmDemo_33UpdateApplicationConfiguration'],
+    staging_atl: ['Ssd_UccStaging_AdmDemoCreate', 'Ssd_UccStaging_UccStaginUpgrade'],
+    staging_tor: ['RST_Ucc_4Staging_4uccTorontoStagingEnvironments_AdmDemoCreate', 'RST_Ucc_4Staging_4uccTorontoStagingEnvironments_UccStaginUpgrade'],
+    production_atl: ['Ssd_5uccProduction_AdmDemoCreate', 'Ssd_5uccProduction_53ProductionUpgrade', 'Ssd_5uccProduction_43UpdateApplicationConfiguration'],
+    production_tor: ['RST_Ucc_5Production_5uccTorontoProductionEnvironments_AdmDemoCreate', 'RST_Ucc_5Production_5uccTorontoProductionEnvironments_53ProductionUpgrade'],
+}
+gather_metrics_for_team 'RST UCC', rst_ucc_stages
+
+rst_dms_stages = {
+    commit: ['DMS_Product_CommitStage_11BuildAndUnitTest'],
+    acceptance: ['DMS_Services_2AcceptanceTests_21ContractTests', 'DMS_Services_2dmsAcceptanceTests_28RunReconciliation'],
+    devqa: ['DMS_Services_3DemoEnvironments_31Cre', 'DMS_Services_4MiamiTestingEnvironments_41Create', 'DMS_Services_4MiamiTestingEnvironments_43Upgrade'],
+    staging_atl: ['DMS_Services_5AtlantaStagingEnvironments_51Create', 'DMS_Services_5AtlantaStagingEnvironments_53Upgrade'],
+    staging_phx: ['DMS_Services_5PhoenixStagingEnvironments_51Create', 'DMS_Services_5PhoenixStagingEnvironments_53Upgrade'],
+    staging_tor: ['DMS_Services_Staging_5TorontoStagingEnvironments_51Create', 'DMS_Services_Staging_5TorontoStagingEnvironments_53Upgrade'],
+    production_atl: ['DMS_Services_6AtlantaProductionEnvironments_61Create', 'DMS_Services_6AtlantaProductionEnvironments_63Upgrade'],
+    production_phx: ['DMS_Services_7PhoenixProductionEnvironments_31Cre', 'DMS_Services_7PhoenixProductionEnvironments_33Upgrade'],
+    production_tor: ['DMS_Services_6Production_6TorontoProductionEnvironments_61Create', 'DMS_Services_6Production_6TorontoProductionEnvironments_63Upgrade'],
+}
+gather_metrics_for_team 'RST DMS', rst_dms_stages
+
+aca_stages = {
+    commit: ['ACAFiling_CommitStage_BuildAndUnitTest'],
+    acceptance: ['ACAFiling_AcceptanceStage_NunitAcceptanceTest', 'ACAFiling_AcceptanceStage_NunitIntegrationTest'],
+    devqa: ['ACAFiling_DevSandbox_CreateEnvironment', 'ACAFiling_PsrSandbox_CreateEnvironment', 'ACAFiling_3ReleaseCandidateUat_CreateOrUpgradeEnvironment'],
+    staging_atl: ['ACAFiling_Staging_CreateOrUpgradeEnvironment'],
+    production_atl: ['ACAFiling_Prodution_CreateOrUpgradeEnvironment'],
+}
+gather_metrics_for_team 'ACA', aca_stages
+
+hoth_dns_api_stages = {
+    commit: ['ucp_HothDnsApi_CommitStage_BuildAndUnitTest'],
+    acceptance: ['ucp_HothDnsApi_AcceptanceStage_FunctionalTest', 'ucp_HothDnsApi_AcceptanceStage_AcceptanceTest', 'ucp_HothDnsApi_AcceptanceStage_PerformanceTest', 'ucp_HothDnsApi_AcceptanceStage_SmokeTest'],
+    devqa: ['ucp_HothDnsApi_DevQa_Create'],
+    staging_mia: ['ucp_HothDnsApi_41StagingMi_Create'],
+    staging_atl: ['ucp_HothDnsApi_42StagingAtl_Create'],
+    staging_phx: ['ucp_HothDnsApi_43StagingPhx_Create'],
+    staging_tor: ['ucp_HothDnsApi_44StagingTo_Create'],
+    production_mia: ['ucp_HothDnsApi_51ProdMia_Create'],
+    production_atl: ['ucp_HothDnsApi_52ProductionAtl_Create'],
+    production_phx: ['ucp_HothDnsApi_53ProductionPhx_Create'],
+    production_tor: ['ucp_HothDnsApi_54ProductioTor_ACreate'],
+}
+gather_metrics_for_team 'Hoth DNS API', hoth_dns_api_stages
