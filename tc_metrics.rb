@@ -35,17 +35,17 @@ class CIBuildMetrics
     begin
       url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:SUCCESS,branch:default:any"
       # url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:SUCCESS"
-      json_response = JSON.parse(RestClient::Request.execute(method: :get, url: url, user: 'ronaldo', password: 'PASSWORD', headers: {accept: 'application/json'}).body)
+      json_response = JSON.parse(RestClient::Request.execute(method: :get, url: url, user: 'svc.teamcity.api', password: 'Te@mC!ty!ssogre@t', headers: {accept: 'application/json'}).body)
       pass_count = json_response['count']
 
       url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:FAILURE,branch:default:any"
       # url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:FAILURE"
-      json_response = JSON.parse(RestClient::Request.execute(method: :get, url: url, user: 'ronaldo', password: 'PASSWORD', headers: {accept: 'application/json'}).body)
+      json_response = JSON.parse(RestClient::Request.execute(method: :get, url: url, user: 'svc.teamcity.api', password: 'Te@mC!ty!ssogre@t', headers: {accept: 'application/json'}).body)
       fail_count = json_response['count']
 
       url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:ERROR,branch:default:any"
       # url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:ERROR"
-      json_response = JSON.parse(RestClient::Request.execute(method: :get, url: url, user: 'ronaldo', password: 'PASSWORD', headers: {accept: 'application/json'}).body)
+      json_response = JSON.parse(RestClient::Request.execute(method: :get, url: url, user: 'svc.teamcity.api', password: 'Te@mC!ty!ssogre@t', headers: {accept: 'application/json'}).body)
       error_count = json_response['count']
     rescue => e
       puts "URL: #{url}"
@@ -209,6 +209,8 @@ def gather_metrics_for_team(team_name, build_config_list_per_stage)
   build_options = [team_name]
   build_stage_options = [team_name]
 
+  graphite_data_pass = {team_name => 'Pass'}
+
   stage_metrics_hash = {}
 
   STAGE_NAMES.each do |stage_key, stage_name|
@@ -222,6 +224,8 @@ def gather_metrics_for_team(team_name, build_config_list_per_stage)
     stage_data_pass[stage_metrics.stage_name] = "#{stage_metrics.pass_count} - #{stage_metrics.pass_percentage}%"
     stage_data_fail[stage_metrics.stage_name] = "#{stage_metrics.fail_count} - #{stage_metrics.fail_percentage}%"
     stage_options << stage_metrics.stage_name
+
+    graphite_data_pass[stage_metrics.stage_name] = stage_metrics.pass_percentage
 
     stage_metrics.build_metrics_list.each do |build_metrics|
       build_data_pass[build_metrics.build_id] = "#{build_metrics.pass_count} - #{build_metrics.pass_percentage}%"
@@ -242,6 +246,11 @@ def gather_metrics_for_team(team_name, build_config_list_per_stage)
     csv << build_data_fail.values
     csv << []
     csv << []
+  end
+
+  CSV.open('graphite_data', 'a+') do |csv|
+    csv << stage_options
+    csv << graphite_data_pass.values
   end
 
   stage_data = [stage_data_pass, stage_data_fail]

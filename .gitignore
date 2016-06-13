@@ -5,3 +5,4 @@ metrics*.csv
 metrics*.xls
 metric_rules
 analysis_metrics_rule.txt
+graphite_data
