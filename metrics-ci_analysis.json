@@ -1,0 +1,15 @@
+{
+  "checks": {
+    "metrics-ci_analysis": {
+      "command": "/opt/sensu/embedded/bin/ruby /etc/sensu/plugins/metrics-ci_analysis.rb",
+      "handlers": [
+        "default",
+        "graphite"
+      ],
+      "standalone": true,
+      "type": "metric",
+      "interval": 21600,
+      "service": "Metrics CI Analysis"
+    }
+  }
+}
