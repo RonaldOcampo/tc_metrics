@@ -1,6 +1,5 @@
 require 'json'
 require 'rest_client'
-require 'table_print'
 require 'csv'
 
 STAGE_NAMES = {
@@ -35,17 +34,17 @@ class CIBuildMetrics
     begin
       url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:SUCCESS,branch:default:any"
       # url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:SUCCESS"
-      json_response = JSON.parse(RestClient::Request.execute(method: :get, url: url, user: 'svc.teamcity.api', password: 'Te@mC!ty!ssogre@t', headers: {accept: 'application/json'}).body)
+      json_response = JSON.parse(RestClient::Request.execute(method: :get, url: url, user: 'svc.teamcity.api', password: 'Te@mC!ty!ssogre@t', headers: {accept: 'application/json'}, verify_ssl: false).body)
       pass_count = json_response['count']
 
       url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:FAILURE,branch:default:any"
       # url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:FAILURE"
-      json_response = JSON.parse(RestClient::Request.execute(method: :get, url: url, user: 'svc.teamcity.api', password: 'Te@mC!ty!ssogre@t', headers: {accept: 'application/json'}).body)
+      json_response = JSON.parse(RestClient::Request.execute(method: :get, url: url, user: 'svc.teamcity.api', password: 'Te@mC!ty!ssogre@t', headers: {accept: 'application/json'}, verify_ssl: false).body)
       fail_count = json_response['count']
 
       url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:ERROR,branch:default:any"
       # url = "http://ci.mia.ucloud.int/app/rest/buildTypes/id:#{@build_id}/builds?locator=count:1000,status:ERROR"
-      json_response = JSON.parse(RestClient::Request.execute(method: :get, url: url, user: 'svc.teamcity.api', password: 'Te@mC!ty!ssogre@t', headers: {accept: 'application/json'}).body)
+      json_response = JSON.parse(RestClient::Request.execute(method: :get, url: url, user: 'svc.teamcity.api', password: 'Te@mC!ty!ssogre@t', headers: {accept: 'application/json'}, verify_ssl: false).body)
       error_count = json_response['count']
     rescue => e
       puts "URL: #{url}"
@@ -217,7 +216,6 @@ def gather_metrics_for_team(team_name, build_config_list_per_stage)
     next unless build_config_list_per_stage[stage_key]
     stage_metrics = CIStageMetrics.new(stage_name, build_config_list_per_stage[stage_key])
     stage_metrics.gather_metrics
-    puts stage_metrics.to_s
 
     stage_metrics_hash[stage_key] = stage_metrics
 
@@ -252,16 +250,6 @@ def gather_metrics_for_team(team_name, build_config_list_per_stage)
     csv << stage_options
     csv << graphite_data_pass.values
   end
-
-  stage_data = [stage_data_pass, stage_data_fail]
-  puts
-  tp stage_data, stage_options
-  puts
-
-  build_data = [build_data_pass, build_data_fail]
-  puts
-  tp build_data, build_options
-  puts
 
   stage_metrics_analysis = CIStageMetricsAnalysis.new(team_name, stage_metrics_hash)
   stage_metrics_analysis.generate_metrics_analysis_file
