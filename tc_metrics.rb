@@ -208,7 +208,9 @@ def gather_metrics_for_team(team_name, build_config_list_per_stage)
   build_options = [team_name]
   build_stage_options = [team_name]
 
-  graphite_data_pass = {team_name => 'Pass'}
+  graphite_build_stage_options = [team_name]
+  graphite_stage_data_pass = {team_name => 'Pass'}
+  graphite_build_data_pass = {team_name => 'Pass'}
 
   stage_metrics_hash = {}
 
@@ -223,13 +225,16 @@ def gather_metrics_for_team(team_name, build_config_list_per_stage)
     stage_data_fail[stage_metrics.stage_name] = "#{stage_metrics.fail_count} - #{stage_metrics.fail_percentage}%"
     stage_options << stage_metrics.stage_name
 
-    graphite_data_pass[stage_metrics.stage_name] = stage_metrics.pass_percentage
+    graphite_stage_data_pass[stage_metrics.stage_name] = stage_metrics.pass_percentage
 
     stage_metrics.build_metrics_list.each do |build_metrics|
       build_data_pass[build_metrics.build_id] = "#{build_metrics.pass_count} - #{build_metrics.pass_percentage}%"
       build_data_fail[build_metrics.build_id] = "#{build_metrics.fail_count} - #{build_metrics.fail_percentage}%"
       build_stage_options << stage_name
       build_options << build_metrics.build_id
+
+      graphite_build_stage_options << "#{stage_metrics.stage_name}_#{build_metrics.build_id}"
+      graphite_build_data_pass[build_metrics.build_id] = build_metrics.pass_percentage
     end
   end
 
@@ -248,7 +253,9 @@ def gather_metrics_for_team(team_name, build_config_list_per_stage)
 
   CSV.open('graphite_data', 'a+') do |csv|
     csv << stage_options
-    csv << graphite_data_pass.values
+    csv << graphite_stage_data_pass.values
+    csv << graphite_build_stage_options
+    csv << graphite_build_data_pass.values
   end
 
   stage_metrics_analysis = CIStageMetricsAnalysis.new(team_name, stage_metrics_hash)
